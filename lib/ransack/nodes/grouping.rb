@@ -49,11 +49,11 @@ module Ransack
       alias :c= :conditions=
 
       def [](key)
-        conditions.detect { |c| c.key == key.to_s }
+        conditions.detect { |c| c.has_name_or_key?(key) }
       end
 
       def []=(key, value)
-        conditions.reject! { |c| c.key == key.to_s }
+        conditions.reject! { |c| c.has_name_or_key?(key) }
         self.conditions << value
       end
 
