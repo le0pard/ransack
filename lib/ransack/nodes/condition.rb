@@ -1,16 +1,18 @@
+require 'ransack/invalid_search_error'
+
 module Ransack
   module Nodes
     class Condition < Node
-      i18n_word :attribute, :predicate, :combinator, :value
+      i18n_word :attribute, :predicate, :combinator, :value, :name
       i18n_alias a: :attribute, p: :predicate,
-                 m: :combinator, v: :value
+                 m: :combinator, v: :value, n: :name
 
-      attr_accessor :predicate
+      attr_accessor :predicate, :name
 
       class << self
-        def extract(context, key, values)
+        def extract(context, name, values)
           attributes, predicate, combinator =
-            extract_values_for_condition(key, context)
+            extract_values_for_condition(name, context)
 
           if attributes.size > 0 && predicate
             condition = self.new(context)
@@ -18,7 +20,8 @@ module Ransack
               a: attributes,
               p: predicate.name,
               m: combinator,
-              v: predicate.wants_array ? Array(values) : [values]
+              v: predicate.wants_array ? Array(values) : [values],
+              n: name
             )
             # TODO: Figure out what to do with multiple types of attributes,
             # if anything. Tempted to go with "garbage in, garbage out" here.
@@ -38,7 +41,7 @@ module Ransack
             predicate = Predicate.named(name)
 
             unless predicate || Ransack.options[:ignore_unknown_conditions]
-              raise ArgumentError, "No valid predicate for #{key}"
+              raise InvalidSearchError, "No valid predicate for #{key}"
             end
 
             if context.present?
@@ -127,6 +130,9 @@ module Ransack
       alias :m= :combinator=
       alias :m :combinator
 
+      alias :n= :name=
+      alias :n :name
+
       # == build_attribute
       #
       #  This method was originally called from Nodes::Grouping#new_condition
@@ -171,7 +177,7 @@ module Ransack
 
       def build(params)
         params.with_indifferent_access.each do |key, value|
-          if key.match(/^(a|v|p|m)$/)
+          if key.match(/^(a|v|p|m|n)$/)
             self.send("#{key}=", value)
           end
         end
@@ -193,12 +199,13 @@ module Ransack
         self.attributes == other.attributes &&
         self.predicate == other.predicate &&
         self.values == other.values &&
-        self.combinator == other.combinator
+        self.combinator == other.combinator &&
+        self.name == other.name
       end
       alias :== :eql?
 
       def hash
-        [attributes, predicate, values, combinator].hash
+        [attributes, predicate, values, combinator, name].hash
       end
 
       def predicate_name=(name)
@@ -224,7 +231,7 @@ module Ransack
       end
 
       def casted_values_for_attribute(attr)
-        validated_values.map { |v| v.cast(predicate.type || attr.type) }
+        validated_values.map(&:cast_array)
       end
 
       def formatted_values_for_attribute(attr)
@@ -271,7 +278,8 @@ module Ransack
           ['attributes'.freeze, a.try(:map, &:name)],
           ['predicate'.freeze, p],
           [Constants::COMBINATOR, m],
-          ['values'.freeze, v.try(:map, &:value)]
+          ['values'.freeze, v.try(:map, &:value)],
+          ['name'.freeze, n]
         ]
         .reject { |e| e[1].blank? }
         .map { |v| "#{v[0]}: #{v[1]}" }
@@ -322,6 +330,13 @@ module Ransack
       def format_predicate(attribute)
         arel_pred = arel_predicate_for_attribute(attribute)
         arel_values = formatted_values_for_attribute(attribute)
+        
+        # For LIKE predicates, wrap the value in Arel::Nodes.build_quoted to prevent
+        # ActiveRecord normalization from affecting wildcard patterns
+        if like_predicate?(arel_pred)
+          arel_values = Arel::Nodes.build_quoted(arel_values)
+        end
+        
         predicate = attr_value_for_attribute(attribute).public_send(arel_pred, arel_values)
 
         if in_predicate?(predicate)
@@ -336,6 +351,10 @@ module Ransack
       def in_predicate?(predicate)
         return unless defined?(Arel::Nodes::Casted)
         predicate.class == Arel::Nodes::In || predicate.class == Arel::Nodes::NotIn
+      end
+
+      def like_predicate?(arel_predicate)
+        arel_predicate == 'matches' || arel_predicate == 'does_not_match'
       end
 
       def casted_array?(predicate)

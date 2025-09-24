@@ -16,7 +16,7 @@ jobs:
       DB: sqlite3
       RAILS: main
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
@@ -39,7 +39,7 @@ jobs:
       MYSQL_USERNAME: root
       MYSQL_PASSWORD: root
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
@@ -51,6 +51,48 @@ jobs:
         run: |
           mysql --user=root --password=root --host=127.0.0.1 -e 'create database ransack collate utf8_general_ci;';
           mysql --user=root --password=root --host=127.0.0.1 -e 'use ransack;show variables like "%character%";show variables like "%collation%";';
+      - name: Install dependencies
+        run: bundle install
+      - name: Run tests
+        run: bundle exec rspec
+
+  postgis:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby:
+          - 3.2.2
+    env:
+      DB: postgis
+      RAILS: main
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_HOST: 127.0.0.1
+    services:
+      postgres:
+        image: postgres
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+      - name: Setup databases
+        run: |
+          psql -h localhost -p 5432 -W postgres -c 'create database ransack;' -U postgres;
       - name: Install dependencies
         run: bundle install
       - name: Run tests
@@ -85,7 +127,7 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:

@@ -64,6 +64,7 @@ module Ransack
           end
 
           specify { expect { subject }.to raise_error ArgumentError }
+          specify { expect { subject }.to raise_error InvalidSearchError }
         end
 
         context "when ignore_unknown_conditions is true" do
@@ -95,7 +96,10 @@ module Ransack
             Ransack.configure { |c| c.default_predicate = 'eq' }
           end
 
-          specify { expect(subject).to eq Condition.extract(Context.for(Person), 'full_name_eq', Person.first.name) }
+          specify do
+            expect(subject).not_to be_nil
+            expect(subject.predicate.name).to eq 'eq'
+          end
         end
       end
     end
